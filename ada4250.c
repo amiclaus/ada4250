@@ -139,7 +139,7 @@ static int ada4250_set_offset(struct iio_dev *indio_dev,
 	offset_raw = abs(offset) / vlsb;
 
 	ret = regmap_update_bits(dev->regmap, ADA4250_REG_SNSR_CAL_CNFG,
-		ADA4250_RANGE_SET_MSK, range);
+		ADA4250_RANGE_SET_MSK, ADA4250_RANGE_SET(range));
 	if (ret < 0)
 		return ret;
 
@@ -165,8 +165,6 @@ static int ada4250_read_raw(struct iio_dev *indio_dev,
 		if (ret < 0)
 			return ret;
 
-		*val = ADA4250_GAIN_MUX((*val));
-
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_OFFSET:
 
@@ -178,7 +176,7 @@ static int ada4250_read_raw(struct iio_dev *indio_dev,
 		if (ret < 0)
 			return ret;
 
-		*val = ADA4250_BIAS_SET((*val));
+		*val = *val >> 2;
 
 		return IIO_VAL_INT;
 	default:
@@ -208,8 +206,8 @@ static int ada4250_write_raw(struct iio_dev *indio_dev,
 		return ada4250_set_offset(indio_dev, chan, val);
 
 	case IIO_CHAN_INFO_CALIBBIAS:
-		ret = regmap_write(dev->regmap, ADA4250_REG_SNSR_CAL_CNFG,
-			ADA4250_BIAS_SET(val));
+		ret = regmap_update_bits(dev->regmap, ADA4250_REG_SNSR_CAL_CNFG,
+			ADA4250_BIAS_SET_MSK, ADA4250_BIAS_SET(val));
 		if (ret < 0)
 			return ret;
 
