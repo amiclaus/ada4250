@@ -41,10 +41,10 @@
 #define ADA4250_SNSR_CAL_VAL(x)     FIELD_PREP(ADA4250_SNSR_CAL_VAL_MSK, x)
 
 /* ADA4250_REG_SNSR_CAL_CNFG Bit Definition */
-#define ADA4250_BIAS_SET_MSK        GENMASK(1, 0)
-#define ADA4250_BIAS_SET(x)         FIELD_PREP(ADA4250_SNSR_CAL_VAL_MSK, x)
-#define ADA4250_RANGE_SET_MSK       GENMASK(3, 2)
-#define ADA4250_RANGE_SET(x)        FIELD_PREP(ADA4250_SNSR_CAL_VAL_MSK, x)
+#define ADA4250_BIAS_SET_MSK        GENMASK(3, 2)
+#define ADA4250_BIAS_SET(x)         FIELD_PREP(ADA4250_BIAS_SET_MSK, x)
+#define ADA4250_RANGE_SET_MSK       GENMASK(1, 0)
+#define ADA4250_RANGE_SET(x)        FIELD_PREP(ADA4250_RANGE_SET_MSK, x)
 
 #define ADA4250_CHIP_ID             0x4250
 
@@ -59,10 +59,10 @@ enum ada4250_bias {
 };
 
 enum ada4250_offset_range {
-	ADA4250_RANGE1_1UA_MAX,
-	ADA4250_RANGE2_3UA_MAX,
-	ADA4250_RANGE3_7UA_MAX,
-	ADA4250_RANGE4_15UA_MAX,
+	ADA4250_RANGE1,
+	ADA4250_RANGE2,
+	ADA4250_RANGE3,
+	ADA4250_RANGE4,
 };
 
 enum ada4250_gain {
@@ -82,6 +82,12 @@ struct ada4250 {
 	enum ada4250_gain	gain;
 	struct regulator	*reg;
 	int			offset_uv;
+};
+
+static const int calibbias_table[] = {
+	ADA4250_BIAS_DISABLE,
+	ADA4250_BIAS_BANDGAP_REF,
+	ADA4250_BIAS_AVDD,
 };
 
 static const struct regmap_config ada4250_regmap_config = {
@@ -118,7 +124,7 @@ static int ada4250_set_offset(struct iio_dev *indio_dev,
 	x[7] = x[1] * 1000 / 31599;
 
 	if (dev->gain != ADA4250_GAIN_1) {
-		for (i = ADA4250_RANGE1_1UA_MAX; i <= ADA4250_RANGE4_15UA_MAX; i++) {
+		for (i = ADA4250_RANGE1; i <= ADA4250_RANGE4; i++) {
 			max_vos = x[dev->gain] *  127 * ((1 << (i + 1)) - 1);
 			min_vos = (-1) * max_vos;
 			if(offset > min_vos && offset < max_vos) {
@@ -139,10 +145,10 @@ static int ada4250_set_offset(struct iio_dev *indio_dev,
 
 	if (offset < 0) {
 		dev->offset_uv = (-1) * offset_raw * vlsb;
-		return regmap_write(dev->regmap, ADA4250_REG_SNSR_CAL_VAL, (1 << 8 | abs(offset_raw)));
+		return regmap_write(dev->regmap, ADA4250_REG_SNSR_CAL_VAL, offset_raw);
 	} else {
 		dev->offset_uv = offset_raw * vlsb;
-		return regmap_write(dev->regmap, ADA4250_REG_SNSR_CAL_VAL, offset_raw);
+		return regmap_write(dev->regmap, ADA4250_REG_SNSR_CAL_VAL, (1 << 8 | offset_raw));
 	}
 }
 
@@ -163,11 +169,8 @@ static int ada4250_read_raw(struct iio_dev *indio_dev,
 
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_OFFSET:
-		ret = regmap_read(dev->regmap, ADA4250_REG_SNSR_CAL_VAL, val);
-		if (ret < 0)
-			return ret;
 
-		*val = ADA4250_SNSR_CAL_VAL((*val));
+		*val = dev->offset_uv;
 
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_CALIBBIAS:
@@ -221,6 +224,24 @@ static int ada4250_write_raw(struct iio_dev *indio_dev,
 	return 0;
 }
 
+
+static int ada4250_read_avail(struct iio_dev *indio_dev,
+			       struct iio_chan_spec const *chan,
+			       const int **vals, int *type, int *length,
+			       long mask)
+{
+	switch (mask) {
+	case IIO_CHAN_INFO_CALIBBIAS:
+		*vals = (const int *)calibbias_table;
+		*type = IIO_VAL_INT;
+		*length = ARRAY_SIZE(calibbias_table);
+
+		return IIO_AVAIL_LIST;
+	default:
+		return -EINVAL;
+	}
+}
+
 static int ada4250_reg_access(struct iio_dev *indio_dev,
 	unsigned int reg,
 	unsigned int write_val,
@@ -237,6 +258,7 @@ static int ada4250_reg_access(struct iio_dev *indio_dev,
 static const struct iio_info ada4250_info = {
 	.read_raw = ada4250_read_raw,
 	.write_raw = ada4250_write_raw,
+	.read_avail = &ada4250_read_avail,
 	.debugfs_reg_access = &ada4250_reg_access,
 };
 
@@ -296,6 +318,7 @@ static const struct iio_chan_spec_ext_info ada4250_ext_info[] = {
 	.info_mask_separate = BIT(IIO_CHAN_INFO_HARDWAREGAIN) | \
 		BIT(IIO_CHAN_INFO_OFFSET) | 			\
 		BIT(IIO_CHAN_INFO_CALIBBIAS), 			\
+	.info_mask_separate_available = BIT(IIO_CHAN_INFO_CALIBBIAS), \
 	.ext_info = ada4250_ext_info,				\
 }
 
